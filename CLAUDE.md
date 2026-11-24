@@ -28,6 +28,10 @@
 - Feature report 7 reads back 32 bytes without any write: `07 00 80 08 51 2a 02 1b 11 ss 00 d0 09 00 00 02 20 5a a5 …`. Both interfaces answer it with the same data. On an idle mouse only byte 9 changed, through `00`, `02`, `04`, `06` every five seconds, which is probably an animation. The other bytes are not identified.
 - Feature reports 1 to 3 answer with the report ID repeated and zeros, which is not data; only report 7 carries anything.
 - No vendor input reports arrive when the buttons are pressed, so the mouse streams nothing about its configuration.
+- Its mouse interface (usage 2) sends input report 1, seven bytes: the report ID, the five button bits, X and Y
+  as signed 16-bit little-endian values, then the wheel. That is why `ZelotesProbe measure --report-id` fits it.
+  It reported at 125 Hz however its stages were set. `ZelotesProbe measure` reads input reports only, so it
+  skips the configuration channel the probe otherwise waits for.
 - Read it with `ZelotesProbe devices`, then `ZelotesProbe feature --vendor 0x30fa --product 0x1701 --feature-id 7` and `ZelotesProbe listen --vendor 0x30fa --product 0x1701`; all three only read.
 
 ### T-20 commands
@@ -39,6 +43,8 @@ Every command is one 8-byte feature report, ID 7 first; the chip answers nothing
 - Wheel: `07 11 00 00` scroll, `07 11 01 00` volume, `07 11 02 02` reversed. Auto-fire interval: `07 12 00 <0..255>`.
 - Lighting: `07 13 7F 17` off, `07 13 7F 10|speed` rainbow breathing (speed 0 to 5). A colour needs all six slots `07 14 <slot<<4 | green><red<<4 | blue>` (slots 0, 2, 4, 6, 8, A, nibble `0xF - channel/16`) and then `07 13 FF <value<<4 | speed> 0B <0xF - brightness> <value & 0xF>`, value 0A steady, 08 breathing, 06 spectrum, speed 0 for steady.
 - The mouse has a red and a blue LED only: `00ff00` turns the lighting off, and red and blue are the colours that light.
+- The DPI encoding is confirmed by measurement: 400 DPI moved 391 counts per inch, 2000 DPI 1971, both set with
+  `ZelotesProbe t20-dpi --dpi <value>`, which gives all four stages one value.
 - `ZelotesProbe t20-status`, `t20-dpi` and `t20-light` send these with tracing; `ZelotesProbe t20-light --usage 2 --light steady --colour ff0000` was seen to light the mouse red.
 
 ## macOS pointer acceleration

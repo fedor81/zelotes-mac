@@ -40,6 +40,7 @@ final class MovementMeter {
     private let vendorID: Int
     private let productID: Int
     private var warnedAboutReportLength = false
+    private var sawFirstReport = false
     private var stroke: [Report] = []
 
     /// `reportStartsWithID` is for a mouse whose reports carry their report ID as a first byte, which shifts the
@@ -83,7 +84,7 @@ final class MovementMeter {
             }
             throw MouseAccessError.accessRefused(status)
         }
-        guard let devices = IOHIDManagerCopyDevices(manager), CFSetGetCount(devices) > 0 else {
+        guard try await waitForDevice() else {
             throw MouseAccessError.notConnected
         }
 
@@ -99,8 +100,24 @@ final class MovementMeter {
         }
     }
 
-    fileprivate func received(_ report: [UInt8], sentAt timeStamp: UInt64) {
+    /// The manager fills its device set asynchronously, so the first look right after opening can be empty.
+    private func waitForDevice() async throws -> Bool {
+        for _ in 0..<40 {
+            if let devices = IOHIDManagerCopyDevices(manager), CFSetGetCount(devices) > 0 {
+                return true
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
+    fileprivate func received(_ report: [UInt8], reportID: UInt32, sentAt timeStamp: UInt64) {
         guard report.count >= Self.reportLength else { return }
+        if !sawFirstReport {
+            sawFirstReport = true
+            let hex = report.map { String(format: "%02x", $0) }.joined(separator: " ")
+            print("First report: ID \(reportID), \(report.count) bytes: \(hex)")
+        }
         if report.count != Self.reportLength, !warnedAboutReportLength {
             warnedAboutReportLength = true
             print("Note: this mouse's movement report is \(report.count) bytes, not \(Self.reportLength); the DPI "
@@ -182,5 +199,5 @@ private func reportArrived(
     guard let context else { return }
     let bytes = Array(UnsafeBufferPointer(start: report, count: length))
     let meter = Unmanaged<MovementMeter>.fromOpaque(context).takeUnretainedValue()
-    MainActor.assumeIsolated { meter.received(bytes, sentAt: timeStamp) }
+    MainActor.assumeIsolated { meter.received(bytes, reportID: reportID, sentAt: timeStamp) }
 }

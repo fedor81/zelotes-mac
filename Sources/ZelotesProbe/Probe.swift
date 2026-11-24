@@ -49,6 +49,22 @@ struct Probe {
             return
         }
 
+        // The meter only reads input reports, so it needs none of the configuration plumbing below — which would
+        // wait two seconds for a configuration channel the T-20's mouse interface does not have.
+        if options.experiment == .measure {
+            do {
+                try await MovementMeter(
+                    vendorID: options.vendorID,
+                    productID: options.productID,
+                    reportStartsWithID: options.reportStartsWithID
+                ).run()
+            } catch {
+                print("failed: \(error.localizedDescription)")
+                exit(1)
+            }
+            return
+        }
+
         if let mode = options.reconMode {
             do {
                 try await ReportRecon.run(mode, vendorID: options.vendorID, productID: options.productID)
@@ -93,6 +109,7 @@ struct Probe {
         var light: T20LightingMode = .steady
         var colour = T20Color(red: 0xFF, green: 0, blue: 0)
         var brightness: UInt8 = 7
+        var dpi: Int?
         var modeCode: UInt8?
         var extendedCode: UInt8?
         var speed: UInt8 = 0
@@ -124,6 +141,7 @@ struct Probe {
               --mode-code 0x16     t20-light: send only 07 13 7f <code>, without the colour slots.
               --extended-code 0x0a t20-light: send 07 13 ff <mode<<4|speed> 0b <0f-brightness> 00 after the slots.
               --speed 0..5         t20-light: speed nibble for --extended-code; 6 and above freezes the effect.
+              --dpi 200..3000      t20-dpi: give all four stages this DPI instead of the factory ones.
                 The T-20 experiments default to its own IDs: 30fa:1701, usage page 1 usage 2, report 7.
             """
 
@@ -176,6 +194,10 @@ struct Probe {
                 case "--colour":
                     guard let value = arguments.popFirst(), let color = T20Color(hex: value) else { return nil }
                     colour = color
+                case "--dpi":
+                    guard let value = arguments.popFirst().flatMap(Int.init),
+                          T20DPISettings.dpiChoices.contains(value) else { return nil }
+                    dpi = value
                 case "--brightness":
                     guard let value = arguments.popFirst().flatMap(UInt8.init), value <= 7 else { return nil }
                     brightness = value
@@ -230,7 +252,7 @@ struct Probe {
         let writer = ProfileWriter(transport: trace)
         let profile = options.profile
         switch experiment {
-        case .devices, .feature, .listen:
+        case .devices, .feature, .listen, .measure:
             break
         case .status:
             try await Task.sleep(for: .milliseconds(100))
@@ -249,7 +271,10 @@ struct Probe {
         case .t20Status:
             trace.readStatus()
         case .t20DPI:
-            try await T20Writer(transport: trace).writeDPI(.factoryDefault)
+            let settings = options.dpi.map { value in
+                T20DPISettings(stages: Array(repeating: value, count: T20DPISettings.stageCount), activeStage: 0)
+            } ?? .factoryDefault
+            try await T20Writer(transport: trace).writeDPI(settings)
             trace.readStatus()
         case .t20Light:
             if let code = options.extendedCode {
@@ -263,12 +288,6 @@ struct Probe {
                 try await T20Writer(transport: trace).writeLighting(lighting)
             }
             trace.readStatus()
-        case .measure:
-            try await MovementMeter(
-                vendorID: options.vendorID,
-                productID: options.productID,
-                reportStartsWithID: options.reportStartsWithID
-            ).run()
         }
     }
 
