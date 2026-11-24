@@ -29,11 +29,13 @@ struct Probe {
         case t20DPI = "t20-dpi"
         /// Writes one T-20 lighting mode; `--light` and `--colour` choose it.
         case t20Light = "t20-light"
+        /// Writes one T-20 button binding; `--button` and `--action` choose it.
+        case t20Button = "t20-button"
 
         /// The T-20 experiments target its own IDs unless the command line says otherwise.
         var isT20: Bool {
             switch self {
-            case .t20Status, .t20DPI, .t20Light: true
+            case .t20Status, .t20DPI, .t20Light, .t20Button: true
             default: false
             }
         }
@@ -113,6 +115,9 @@ struct Probe {
         var modeCode: UInt8?
         var extendedCode: UInt8?
         var speed: UInt8 = 0
+        var button: T20Button?
+        /// The raw action byte, so a code the app does not name yet can still be tried.
+        var action: UInt8?
 
         var reconMode: ReportRecon.Mode? {
             switch experiment {
@@ -142,6 +147,11 @@ struct Probe {
               --extended-code 0x0a t20-light: send 07 13 ff <mode<<4|speed> 0b <0f-brightness> 00 after the slots.
               --speed 0..5         t20-light: speed nibble for --extended-code; 6 and above freezes the effect.
               --dpi 200..3000      t20-dpi: give all four stages this DPI instead of the factory ones.
+              --button NAME        t20-button: left, wheel, right, side-back, side-front, top-back, top-front
+                                   (or the protocol's own number, 0x01 to 0x08).
+              --action NAME        t20-button: host (the default), left, middle, right, back, forward,
+                                   dpi-cycle, copy, double-click, auto-fire, dpi-up, dpi-down,
+                                   or the protocol's own byte
                 The T-20 experiments default to its own IDs: 30fa:1701, usage page 1 usage 2, report 7.
             """
 
@@ -210,6 +220,12 @@ struct Probe {
                 case "--speed":
                     guard let value = arguments.popFirst().flatMap(UInt8.init), value <= 5 else { return nil }
                     speed = value
+                case "--button":
+                    guard let value = arguments.popFirst().flatMap(Self.button) else { return nil }
+                    button = value
+                case "--action":
+                    guard let value = arguments.popFirst().flatMap(Self.action) else { return nil }
+                    action = value
                 default:
                     if let profile = UInt8(argument).flatMap(MouseProfile.init(rawValue:)) {
                         // A bare number is the profile, as it was before the options existed.
@@ -235,6 +251,26 @@ struct Probe {
 
         private static func lightingMode(_ text: String) -> T20LightingMode? {
             text == "rainbow" ? .rainbowBreathing : T20LightingMode(rawValue: text)
+        }
+
+        /// The protocol's own button numbers, so a button the app does not name yet can still be tried.
+        private static func button(_ text: String) -> T20Button? {
+            let names: [String: T20Button] = [
+                "left": .left, "wheel": .wheel, "middle": .wheel, "right": .right,
+                "side-back": .sideBack, "side-front": .sideFront, "top-back": .topBack, "top-front": .topFront,
+            ]
+            if let named = names[text.lowercased()] { return named }
+            return number(text).flatMap(UInt8.init(exactly:)).flatMap(T20Button.init(rawValue:))
+        }
+
+        private static func action(_ text: String) -> UInt8? {
+            let names: [String: T20ButtonAction] = [
+                "host": .hostKey, "left": .leftClick, "middle": .middleClick, "right": .rightClick,
+                "back": .back, "forward": .forward, "dpi-cycle": .dpiCycle, "copy": .copy,
+                "double-click": .doubleClick, "auto-fire": .autoFire, "dpi-up": .dpiUp, "dpi-down": .dpiDown,
+            ]
+            if let named = names[text.lowercased()] { return named.rawValue }
+            return number(text).flatMap(UInt8.init(exactly:))
         }
 
         private static func number(_ text: String) -> Int? {
@@ -287,6 +323,14 @@ struct Probe {
                 let lighting = T20Lighting(mode: options.light, color: options.colour, brightness: options.brightness)
                 try await T20Writer(transport: trace).writeLighting(lighting)
             }
+            trace.readStatus()
+        case .t20Button:
+            guard let button = options.button else {
+                print("t20-button needs --button.")
+                return
+            }
+            let action = options.action ?? T20ButtonAction.hostKey.rawValue
+            try await T20Writer(transport: trace).writeButton(button, rawAction: action)
             trace.readStatus()
         }
     }

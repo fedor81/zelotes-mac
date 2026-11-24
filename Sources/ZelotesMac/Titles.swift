@@ -318,7 +318,7 @@ extension T20ButtonAction {
         case .back: "Back"
         case .forward: "Forward"
         case .dpiCycle: "Cycle DPI Stages"
-        case .showDesktop: "Show Desktop"
+        case .copy: "Copy"
         case .doubleClick: "Double Click"
         case .autoFire: "Auto-Fire"
         case .dpiUp: "DPI Up"

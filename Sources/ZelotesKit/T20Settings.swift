@@ -22,7 +22,7 @@ public enum T20ButtonAction: UInt8, CaseIterable, Codable, Sendable {
     case back = 0x04
     case forward = 0x05
     case dpiCycle = 0x06
-    case showDesktop = 0x07
+    case copy = 0x07
     case doubleClick = 0x08
     case autoFire = 0x09
     case dpiUp = 0x0B

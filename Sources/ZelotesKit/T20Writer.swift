@@ -94,8 +94,18 @@ public struct T20Writer {
     public func writeButtons(_ buttons: [T20Button: T20ButtonAction]) async throws {
         for button in T20Button.allCases {
             guard let action = buttons[button] else { continue }
-            try await send(.button(button, action: action))
+            try await writeButton(button, action: action)
         }
+    }
+
+    /// One binding on its own, for trying a button before the app writes the whole set.
+    public func writeButton(_ button: T20Button, action: T20ButtonAction) async throws {
+        try await writeButton(button, rawAction: action.rawValue)
+    }
+
+    /// An action byte the app does not name yet, so the vendor's other codes can be tried.
+    public func writeButton(_ button: T20Button, rawAction: UInt8) async throws {
+        try await send(T20Command(command: 0x10, arguments: [button.rawValue, rawAction]))
     }
 
     /// Sends the vendor app's single-packet lighting effect, `07 13 7f <code>`, which the chip uses for its

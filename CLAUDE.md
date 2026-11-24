@@ -39,13 +39,17 @@
 Every command is one 8-byte feature report, ID 7 first; the chip answers nothing but a status report. The mouse stores nothing, so `T20Writer` sends the whole set after each plug-in and after each change.
 
 - DPI: `07 09 <active stage> <(dpi/200)<<4 | 0x08+stage> <mask of enabled stages>`; four stages, 200 to 3000 in steps of 200, one packet per stage with the same mask.
-- Buttons: `07 10 <button> <action>`. Buttons 01 left, 02 wheel, 03 right, 04 side rear, 05 side front, 06 top rear, 08 top front. Actions 00 host (reports the press to the Mac; nothing listens yet), 01 left, 02 middle, 03 right, 04 back, 05 forward, 06 cycle stages, 07 show desktop, 08 double click, 09 auto-fire, 0B stage up, 0C stage down.
+- Buttons: `07 10 <button> <action>`. Buttons 01 left, 02 wheel, 03 right, 04 side rear, 05 side front, 06 top rear, 08 top front. Actions 00 host (reports the press to the Mac; nothing listens yet), 01 left, 02 middle, 03 right, 04 back, 05 forward, 06 cycle stages, 07 copy, 08 double click, 09 auto-fire, 0B stage up, 0C stage down.
+  A binding takes effect at once, without a replug: `ZelotesProbe t20-button --button side-back --action left` was seen to turn that button into a left click in the next HID report. Actions 01, 04, 05, 06, 08, 09, 0B and 0C were each tried on hardware and did what the list says. Action 07 is Copy, not Show Desktop: the mouse sends a keyboard report `03 08 00 07` (report ID 3, Command + C) and nothing else. 0A reports like 00 and does nothing itself.
+- A button the mouse works out itself — 01 to 0C — sends nothing else, so the host never learns about it. Actions 00 and 0A instead report the press on the vendor report: page 0x0001 usage 06, report ID 6, `06 <0xF0 + button> 00` on press and `06 <0xF0 + button> 80` on release. That is what a host-side key binding would listen to.
+- The top button also sends `06 f6 00`/`06 f6 80` when a stage change actually happens, and nothing when it is already at the end of the range.
+- The mouse tested has six buttons — left, right, wheel, DPI, back, forward — so 08 has no physical button.
 - Wheel: `07 11 00 00` scroll, `07 11 01 00` volume, `07 11 02 02` reversed. Auto-fire interval: `07 12 00 <0..255>`.
 - Lighting: `07 13 7F 17` off, `07 13 7F 10|speed` rainbow breathing (speed 0 to 5). A colour needs all six slots `07 14 <slot<<4 | green><red<<4 | blue>` (slots 0, 2, 4, 6, 8, A, nibble `0xF - channel/16`) and then `07 13 FF <value<<4 | speed> 0B <0xF - brightness> <value & 0xF>`, value 0A steady, 08 breathing, 06 spectrum, speed 0 for steady.
 - The mouse has a red and a blue LED only: `00ff00` turns the lighting off, and red and blue are the colours that light.
 - The DPI encoding is confirmed by measurement: 400 DPI moved 391 counts per inch, 2000 DPI 1971, both set with
   `ZelotesProbe t20-dpi --dpi <value>`, which gives all four stages one value.
-- `ZelotesProbe t20-status`, `t20-dpi` and `t20-light` send these with tracing; `ZelotesProbe t20-light --usage 2 --light steady --colour ff0000` was seen to light the mouse red.
+- `ZelotesProbe t20-status`, `t20-dpi`, `t20-light` and `t20-button` send these with tracing; `ZelotesProbe t20-light --usage 2 --light steady --colour ff0000` was seen to light the mouse red, and `t20-button` takes a name or the protocol's own byte for both `--button` and `--action`.
 
 ## macOS pointer acceleration
 

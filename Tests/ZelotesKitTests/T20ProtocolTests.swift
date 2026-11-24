@@ -124,7 +124,7 @@ import Testing
         var settings = T20Settings()
         settings.dpi = T20DPISettings(stages: [400, 900, 1600, 3000], enabled: [true, false, true, true], activeStage: 2)
         settings.lighting = T20Lighting(mode: .steady, color: T20Color(red: 0, green: 0, blue: 255), brightness: 3)
-        settings.buttons[.sideBack] = .showDesktop
+        settings.buttons[.sideBack] = .copy
         settings.scroll = .volume
         settings.fireRate = 20
 
