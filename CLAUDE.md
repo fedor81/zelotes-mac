@@ -19,6 +19,17 @@
 - The movement report is 7 bytes without a report ID: buttons, X and Y as signed 16-bit little-endian, wheel, horizontal scroll. Reading it needs Input Monitoring. At 1000 Hz, input value callbacks lose most reports; raw reports with timestamps (`IOHIDManagerRegisterInputReportWithTimeStampCallback`) do not.
 - Not confirmed on hardware: a stage switch on its own; lighting values other than the two factory ones; whether channel levels other than `10`, `20` and `31` mix colours; whether the animated effects take another palette; whether selecting the profile before `03` and `04` is needed. The factory DPI of stages 1 to 3 (1500, 2500, 4000) is read back from their codes.
 
+## Zelotes T-20
+
+- USB `30fa:1701`, product `USB GAMING MOUSE`, maker `INSTANT`. Two HID interfaces, both on usage page 1: usage 6 is a composite of a keyboard (report 3), Consumer (2), a vendor input report (page `FF00`, ID 6) and the vendor feature report (page `FF01`, ID 7); usage 2 is the plain mouse (report 1).
+- No output reports: the longest output report is 1 byte on both interfaces, so the C-18's 64-byte table writes cannot apply here. Nothing has been written to this mouse yet.
+- The mouse report, ID 1, is seven bytes: the ID, the buttons (bit 0 left, 1 right, 2 middle, 3 and 4 the two thumb buttons, which is which not yet certain), X and Y as signed 16-bit little-endian and the wheel. Unlike the C-18's it carries a report ID, which moves X and Y one byte along; `ZelotesProbe measure --report-id` accounts for that.
+- The DPI button sends no button bit and no report of its own; like the C-18's, it changes the mouse without telling the host.
+- Feature report 7 reads back 32 bytes without any write: `07 00 80 08 51 2a 02 1b 11 ss 00 d0 09 00 00 02 20 5a a5 …`. Both interfaces answer it with the same data. On an idle mouse only byte 9 changed, through `00`, `02`, `04`, `06` every five seconds, which is probably an animation. The other bytes are not identified.
+- Feature reports 1 to 3 answer with the report ID repeated and zeros, which is not data; only report 7 carries anything.
+- No vendor input reports arrive when the buttons are pressed, so the mouse streams nothing about its configuration.
+- Read it with `ZelotesProbe devices`, then `ZelotesProbe feature --vendor 0x30fa --product 0x1701 --feature-id 7` and `ZelotesProbe listen --vendor 0x30fa --product 0x1701`; all three only read.
+
 ## macOS pointer acceleration
 
 - Acceleration is applied by the HID event system's pointer filter (`IOHIDPointerScrollFilter`, open source in Apple's IOHIDFamily), configured per service through properties. Settings on one service leave other mice and the trackpad alone, and vanish with the service when the device is unplugged. `hidutil dump services` shows each service's accelerator and its curve segments.

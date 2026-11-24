@@ -27,8 +27,8 @@ final class MovementMeter {
     // The C-18's mouse report, from its report descriptor: buttons, then X and Y as signed 16-bit
     // little-endian values, then wheel and horizontal scroll. It has no report ID.
     private static let reportLength = 7
-    private static let xOffset = 1
-    private static let yOffset = 3
+    private let xOffset: Int
+    private let yOffset: Int
 
     private static let secondsPerTick: Double = {
         var timebase = mach_timebase_info_data_t()
@@ -37,7 +37,23 @@ final class MovementMeter {
     }()
 
     private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    private let vendorID: Int
+    private let productID: Int
+    private var warnedAboutReportLength = false
     private var stroke: [Report] = []
+
+    /// `reportStartsWithID` is for a mouse whose reports carry their report ID as a first byte, which shifts the
+    /// movement values one byte along; the C-18 sends none.
+    init(
+        vendorID: Int = DeviceIdentity.vendorID,
+        productID: Int = DeviceIdentity.productID,
+        reportStartsWithID: Bool = false
+    ) {
+        self.vendorID = vendorID
+        self.productID = productID
+        xOffset = reportStartsWithID ? 2 : 1
+        yOffset = reportStartsWithID ? 4 : 3
+    }
 
     func run() async throws {
         // This runs until Ctrl-C, which does not flush stdout; piped output would otherwise never appear.
@@ -46,8 +62,8 @@ final class MovementMeter {
             IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         }
         let matching: [String: Any] = [
-            kIOHIDVendorIDKey: DeviceIdentity.vendorID,
-            kIOHIDProductIDKey: DeviceIdentity.productID,
+            kIOHIDVendorIDKey: vendorID,
+            kIOHIDProductIDKey: productID,
             kIOHIDPrimaryUsagePageKey: kHIDPage_GenericDesktop,
             kIOHIDPrimaryUsageKey: kHIDUsage_GD_Mouse,
         ]
@@ -85,11 +101,16 @@ final class MovementMeter {
 
     fileprivate func received(_ report: [UInt8], sentAt timeStamp: UInt64) {
         guard report.count >= Self.reportLength else { return }
+        if report.count != Self.reportLength, !warnedAboutReportLength {
+            warnedAboutReportLength = true
+            print("Note: this mouse's movement report is \(report.count) bytes, not \(Self.reportLength); the DPI "
+                + "figure below assumes the C-18's layout. The report rate still counts.")
+        }
         stroke.append(Report(
             sent: Double(timeStamp) * Self.secondsPerTick,
             delivered: Self.now,
-            x: Self.signed16(report, at: Self.xOffset),
-            y: Self.signed16(report, at: Self.yOffset)
+            x: Self.signed16(report, at: xOffset),
+            y: Self.signed16(report, at: yOffset)
         ))
     }
 

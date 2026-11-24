@@ -44,15 +44,38 @@ public final class MouseConnection {
     public var onChange: (@MainActor () -> Void)?
 
     private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    private let vendorID: Int
+    private let productID: Int
+    private let configurationUsagePage: Int
+    private let configurationUsage: Int?
+    private let featureReportID: CFIndex
 
-    public init() {}
+    /// The IDs default to the C-18's. The probe passes another mouse's so its configuration interface can be
+    /// tried before the app knows about that mouse. `configurationUsage` narrows the match when more than one
+    /// interface sits on the same usage page, as on the T-20.
+    public init(
+        vendorID: Int = DeviceIdentity.vendorID,
+        productID: Int = DeviceIdentity.productID,
+        configurationUsagePage: Int = DeviceIdentity.configurationUsagePage,
+        configurationUsage: Int? = nil,
+        featureReportID: CFIndex = 0
+    ) {
+        self.vendorID = vendorID
+        self.productID = productID
+        self.configurationUsagePage = configurationUsagePage
+        self.configurationUsage = configurationUsage
+        self.featureReportID = featureReportID
+    }
 
     public func start() throws {
-        let matching: [String: Any] = [
-            kIOHIDVendorIDKey: DeviceIdentity.vendorID,
-            kIOHIDProductIDKey: DeviceIdentity.productID,
-            kIOHIDPrimaryUsagePageKey: DeviceIdentity.configurationUsagePage,
+        var matching: [String: Any] = [
+            kIOHIDVendorIDKey: vendorID,
+            kIOHIDProductIDKey: productID,
+            kIOHIDPrimaryUsagePageKey: configurationUsagePage,
         ]
+        if let configurationUsage {
+            matching[kIOHIDPrimaryUsageKey] = configurationUsage
+        }
         IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
 
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -68,7 +91,7 @@ public final class MouseConnection {
 
     fileprivate func attach(_ device: IOHIDDevice) {
         configurationChannel?.close()
-        configurationChannel = ConfigurationChannel(device: device)
+        configurationChannel = ConfigurationChannel(device: device, reportID: featureReportID)
         onChange?()
     }
 
@@ -81,29 +104,36 @@ public final class MouseConnection {
 
 @MainActor
 public final class ConfigurationChannel: ReportTransport {
-    private static let unnumberedReportID: CFIndex = 0
-    private static let featureReportLength = 8
-    private static let inputReportLength = 64
+    /// The C-18's report sizes. A device may declare longer ones, and then its own sizes are used.
+    private static let c18FeatureReportLength = 8
+    private static let c18InputReportLength = 64
 
     /// Called with each input report the mouse sends on this configuration interface.
     public var onInputReport: (@MainActor ([UInt8]) -> Void)?
 
     private let device: IOHIDDevice
-    private let inputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: inputReportLength)
+    private let reportID: CFIndex
+    private let featureReportLength: Int
+    private let inputReportLength: Int
+    private let inputBuffer: UnsafeMutablePointer<UInt8>
 
-    fileprivate init(device: IOHIDDevice) {
+    fileprivate init(device: IOHIDDevice, reportID: CFIndex = 0) {
         self.device = device
+        self.reportID = reportID
+        featureReportLength = max(Self.c18FeatureReportLength, Self.reportSize(device, kIOHIDMaxFeatureReportSizeKey))
+        inputReportLength = max(Self.c18InputReportLength, Self.reportSize(device, kIOHIDMaxInputReportSizeKey))
+        inputBuffer = .allocate(capacity: inputReportLength)
         IOHIDDeviceRegisterInputReportCallback(
             device,
             inputBuffer,
-            Self.inputReportLength,
+            inputReportLength,
             inputReportArrived,
             Unmanaged.passUnretained(self).toOpaque()
         )
     }
 
     fileprivate func close() {
-        IOHIDDeviceRegisterInputReportCallback(device, inputBuffer, Self.inputReportLength, nil, nil)
+        IOHIDDeviceRegisterInputReportCallback(device, inputBuffer, inputReportLength, nil, nil)
         inputBuffer.deallocate()
     }
 
@@ -116,17 +146,21 @@ public final class ConfigurationChannel: ReportTransport {
     }
 
     public func readFeatureReport() throws -> [UInt8] {
-        var bytes = [UInt8](repeating: 0, count: Self.featureReportLength)
+        var bytes = [UInt8](repeating: 0, count: featureReportLength)
         var length = bytes.count
-        let status = IOHIDDeviceGetReport(device, kIOHIDReportTypeFeature, Self.unnumberedReportID, &bytes, &length)
+        let status = IOHIDDeviceGetReport(device, kIOHIDReportTypeFeature, reportID, &bytes, &length)
         guard status == kIOReturnSuccess else {
             throw MouseAccessError.reportRejected(status)
         }
         return Array(bytes.prefix(length))
     }
 
+    private static func reportSize(_ device: IOHIDDevice, _ key: String) -> Int {
+        (IOHIDDeviceGetProperty(device, key as CFString) as? NSNumber)?.intValue ?? 0
+    }
+
     private func send(_ bytes: [UInt8], as type: IOHIDReportType) throws {
-        let status = IOHIDDeviceSetReport(device, type, Self.unnumberedReportID, bytes, bytes.count)
+        let status = IOHIDDeviceSetReport(device, type, reportID, bytes, bytes.count)
         guard status == kIOReturnSuccess else {
             throw MouseAccessError.reportRejected(status)
         }
