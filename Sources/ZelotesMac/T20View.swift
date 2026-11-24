@@ -189,11 +189,16 @@ struct T20View: View {
 
     private var buttonsSection: some View {
         Section {
-            ForEach(T20Button.allCases, id: \.self) { button in
+            ForEach(T20Button.onMouse, id: \.self) { button in
                 LabeledContent(button.title) {
-                    Picker("Action", selection: action(button)) {
+                    Picker("Action", selection: binding(button)) {
                         ForEach(T20ButtonAction.assignable, id: \.self) { action in
-                            Text(action.title).tag(action)
+                            Text(action.title).tag(T20Binding.action(action))
+                        }
+                        Section("Mac Shortcuts") {
+                            ForEach(Self.shortcutCommands, id: \.self) { command in
+                                Text(command.title(on: .macOS)).tag(T20Binding.shortcut(command))
+                            }
                         }
                     }
                     .labelsHidden()
@@ -208,8 +213,20 @@ struct T20View: View {
                 )
                 .foregroundStyle(.orange)
             }
+            if let problem = model.shortcutProblem {
+                shortcutNotice(problem)
+            }
         } header: {
             TitleWithInfo(title: "Buttons", info: Self.buttonsInfo)
+        }
+    }
+
+    private func shortcutNotice(_ problem: String) -> some View {
+        HStack(spacing: 10) {
+            Label(problem, systemImage: "lock.fill")
+                .foregroundStyle(.orange)
+            Button("Open Accessibility Settings") { Self.openAccessibilitySettings() }
+                .buttonStyle(.link)
         }
     }
 
@@ -292,10 +309,34 @@ struct T20View: View {
         )
     }
 
-    private func action(_ button: T20Button) -> Binding<T20ButtonAction> {
+    /// One picker for both the things the mouse does itself and the shortcuts the Mac presses for it.
+    private enum T20Binding: Hashable {
+        case action(T20ButtonAction)
+        case shortcut(WindowCommand)
+    }
+
+    /// The shortcuts the Mac can press, which are the ones macOS has a default key combination for.
+    private static let shortcutCommands = WindowCommand.allCases.filter { $0.keyStroke(on: .macOS) != nil }
+
+    private func binding(_ button: T20Button) -> Binding<T20Binding> {
         Binding(
-            get: { model.settings.buttons[button] ?? .hostKey },
-            set: { action in model.change { $0.buttons[button] = action } }
+            get: {
+                if let shortcut = model.settings.shortcut(for: button) {
+                    return .shortcut(shortcut)
+                }
+                return .action(model.settings.buttons[button] ?? .hostKey)
+            },
+            set: { value in
+                model.change { settings in
+                    switch value {
+                    case .action(let action):
+                        settings.setShortcut(nil, for: button)
+                        settings.buttons[button] = action
+                    case .shortcut(let command):
+                        settings.setShortcut(command, for: button)
+                    }
+                }
+            }
         )
     }
 
@@ -319,6 +360,12 @@ struct T20View: View {
         NSWorkspace.shared.open(url)
     }
 
+    private static func openAccessibilitySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        guard let url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private static let dpiInfo = "DPI is how sensitive the mouse is. The T-20 has four stages of 200 to 3000 DPI in "
         + "steps of 200. A stage left out of the cycle is skipped by the DPI button, which changes the stage on the "
         + "mouse without telling the Mac."
@@ -326,8 +373,10 @@ struct T20View: View {
     private static let lightingInfo = "Steady keeps one colour on. Breathing, Spectrum and Rainbow breathe or move "
         + "through their colours. The mouse shows red and blue only, so a mix of the two looks blue or red."
 
-    private static let buttonsInfo = "What each button does on the mouse itself. A Mac shortcut is not offered: the "
-        + "mouse would have to send the press to the Mac and nothing here listens for it yet."
+    private static let buttonsInfo = "Each button either does something on the mouse itself, or is set to a Mac "
+        + "Shortcut: the mouse then reports the press to this Mac, and ZelotesMac presses that shortcut, so the "
+        + "shortcut has to be one macOS has a default for and needs Accessibility permission. The app lists the six "
+        + "buttons the mouse has."
 
     private static let wheelInfo = "Volume makes the wheel change the volume and Reversed turns it around. Auto-Fire "
         + "repeats clicks while a button set to it is held."

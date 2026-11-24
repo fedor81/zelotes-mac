@@ -67,13 +67,23 @@ import Testing
             [0x07, 0x10, 0x03, 0x03, 0, 0, 0, 0],
             [0x07, 0x10, 0x04, 0x04, 0, 0, 0, 0],
             [0x07, 0x10, 0x05, 0x05, 0, 0, 0, 0],
-            [0x07, 0x10, 0x06, 0x0C, 0, 0, 0, 0],
-            [0x07, 0x10, 0x08, 0x0B, 0, 0, 0, 0],
+            [0x07, 0x10, 0x06, 0x06, 0, 0, 0, 0],
             [0x07, 0x09, 0x00, 0x38, 0x0F, 0, 0, 0],
             [0x07, 0x09, 0x00, 0x49, 0x0F, 0, 0, 0],
             [0x07, 0x09, 0x00, 0x6A, 0x0F, 0, 0, 0],
             [0x07, 0x09, 0x00, 0xCB, 0x0F, 0, 0, 0],
         ])
+    }
+
+    @Test func aButtonWithAMacShortcutIsWrittenAsHostKey() async throws {
+        var settings = T20Settings()
+        settings.setShortcut(.previousDesktop, for: .sideBack)
+        let mouse = FakeT20()
+
+        try await T20Writer(transport: mouse, pause: { _ in }).writeButtons(settings)
+
+        #expect(mouse.packets.contains([0x07, 0x10, 0x04, 0x00, 0, 0, 0, 0]))
+        #expect(!mouse.packets.contains([0x07, 0x10, 0x04, 0x04, 0, 0, 0, 0]))
     }
 
     @Test func aSteadyColourIsSentAsItsSlotsThenTheModePacket() async throws {
@@ -94,7 +104,7 @@ import Testing
 
         try await T20Writer(transport: mouse, pause: { pauses.append($0) }).write(T20Settings())
 
-        #expect(mouse.packets.count == 14)
+        #expect(mouse.packets.count == 13)
         #expect(pauses.contains(.milliseconds(400)))
     }
 
@@ -136,6 +146,83 @@ import Testing
     @Test func aMissingFileIsNotAnError() {
         let store = T20Store(fileURL: URL.temporaryDirectory.appending(path: "t20-missing-\(UUID().uuidString).json"))
         #expect(store.load() == nil)
+    }
+}
+
+@Suite struct T20ShortcutTests {
+    @Test func aShortcutButtonIsSentToTheMouseAsHostKey() {
+        var settings = T20Settings()
+        settings.setShortcut(.previousDesktop, for: .sideBack)
+
+        #expect(settings.buttons[.sideBack] == .hostKey)
+        #expect(settings.action(for: .sideBack) == .hostKey)
+        #expect(settings.shortcut(for: .sideBack) == .previousDesktop)
+    }
+
+    @Test func takingTheShortcutAwayLeavesTheButtonToTheMouseAgain() {
+        var settings = T20Settings()
+        settings.setShortcut(.nextDesktop, for: .sideFront)
+        settings.setShortcut(nil, for: .sideFront)
+        settings.buttons[.sideFront] = .forward
+
+        #expect(settings.shortcut(for: .sideFront) == nil)
+        #expect(settings.action(for: .sideFront) == .forward)
+    }
+
+    @Test func aButtonGivenAShortcutButNoLeftClickIsStillRefused() {
+        var settings = T20Settings()
+        settings.setShortcut(.nextDesktop, for: .left)
+        #expect(!settings.hasLeftClick)
+    }
+
+    @Test func settingsSavedBeforeShortcutsExistedStillLoad() throws {
+        let legacy = """
+        {"dpi":{"stages":[600,800,1200,2400],"enabled":[true,true,true,true],"activeStage":0},
+         "lighting":{"mode":"rainbowBreathing","color":{"red":255,"green":0,"blue":0},"speed":0,"brightness":7},
+         "buttons":[1,1,2,2,3,3,4,4,5,5,6,6],
+         "scroll":0,"fireRate":4}
+        """
+        let settings = try JSONDecoder().decode(T20Settings.self, from: Data(legacy.utf8))
+
+        #expect(settings.shortcut(for: .sideBack) == nil)
+        #expect(settings.action(for: .sideBack) == .back)
+        #expect(settings.hasLeftClick)
+    }
+
+    @Test func theVendorReportNamesTheButtonAndWhetherItWasPressed() {
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06, 0xF5, 0x00])?.button == .sideFront)
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06, 0xF5, 0x00])?.isDown == true)
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06, 0xF5, 0x80])?.isDown == false)
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06, 0xF4, 0x00])?.button == .sideBack)
+        // IOKit may hand the payload over without the report ID as well.
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0xF5, 0x00])?.button == .sideFront)
+    }
+
+    @Test func thePlainMouseReportIsNotAButtonTheMacPressesAnythingFor() {
+        #expect(T20InputReport.buttonPress(reportID: 1, in: [0x01, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00]) == nil)
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06, 0x10, 0x00]) == nil)
+        #expect(T20InputReport.buttonPress(reportID: 6, in: [0x06]) == nil)
+    }
+
+    @Test func theDesktopCommandsHaveTheKeyCodesTheMacPresses() {
+        #expect(WindowCommand.previousDesktop.keyStroke(on: .macOS)?.key.virtualKeyCode == 123)
+        #expect(WindowCommand.nextDesktop.keyStroke(on: .macOS)?.key.virtualKeyCode == 124)
+        #expect(WindowCommand.allWindows.keyStroke(on: .macOS)?.key.virtualKeyCode == 126)
+        #expect(WindowCommand.appWindows.keyStroke(on: .macOS)?.key.virtualKeyCode == 125)
+        #expect(WindowCommand.showDesktop.keyStroke(on: .macOS)?.key.virtualKeyCode == 103)
+        #expect(WindowCommand.switchApp.keyStroke(on: .macOS)?.key.virtualKeyCode == 48)
+    }
+
+    @Test func aKeyTheMacHasNoKeyCodeForCannotBePressed() {
+        #expect(KeyStroke(key: KeyboardKey(usage: 0x6F)).key.virtualKeyCode == nil)
+        #expect(!ShortcutSender.canPost(KeyStroke(key: KeyboardKey(usage: 0x6F))))
+        #expect(ShortcutSender.canPost(WindowCommand.previousDesktop.keyStroke(on: .macOS)!))
+    }
+
+    @Test func aKeyStrokeCarriesTheModifiersTheMacExpects() {
+        #expect(KeyStroke(modifiers: .control, key: .leftArrow).modifiers.cgEventFlags == .maskControl)
+        #expect(KeyStroke(modifiers: [.control, .shift], key: .leftArrow).modifiers.cgEventFlags
+            == [.maskControl, .maskShift])
     }
 }
 

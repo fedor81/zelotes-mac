@@ -52,7 +52,7 @@ public struct T20Writer {
         try await writeLighting(settings.lighting)
         try await send(.scroll(settings.scroll))
         try await send(.fireRate(settings.fireRate))
-        try await writeButtons(settings.buttons)
+        try await writeButtons(settings)
         try await writeDPI(settings.dpi)
     }
 
@@ -91,9 +91,10 @@ public struct T20Writer {
         }
     }
 
-    public func writeButtons(_ buttons: [T20Button: T20ButtonAction]) async throws {
-        for button in T20Button.allCases {
-            guard let action = buttons[button] else { continue }
+    /// One packet per button the mouse has, with `hostKey` for a button the Mac presses a shortcut for.
+    public func writeButtons(_ settings: T20Settings) async throws {
+        for button in T20Button.onMouse {
+            guard let action = settings.action(for: button) else { continue }
             try await writeButton(button, action: action)
         }
     }

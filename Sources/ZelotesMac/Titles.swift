@@ -298,7 +298,7 @@ extension T20Button {
         case .right: "Right Click"
         case .sideBack: "Side Button (Rear)"
         case .sideFront: "Side Button (Front)"
-        case .topBack: "Top Button (Rear)"
+        case .topBack: "DPI Button"
         case .topFront: "Top Button (Front)"
         }
     }

@@ -9,4 +9,8 @@ public enum T20Identity {
     public static let configurationUsagePage = 0x01
     public static let configurationUsage = 0x02
     public static let featureReportID = T20Command.reportID
+    /// The combined interface next to it, which carries a keyboard, the vendor input report and the vendor feature
+    /// report.
+    public static let vendorUsagePage = 0x01
+    public static let vendorUsage = 0x06
 }

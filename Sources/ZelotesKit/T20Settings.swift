@@ -1,19 +1,23 @@
 import Foundation
 
-/// The T-20's seven buttons, numbered as the vendor's protocol does. The event report on interface 1 uses
-/// `0xF0 + rawValue`.
+/// The buttons, numbered as the vendor's protocol does. The vendor input report uses `0xF0 + rawValue`.
 public enum T20Button: UInt8, CaseIterable, Codable, Sendable {
     case left = 0x01
     case wheel = 0x02
     case right = 0x03
     case sideBack = 0x04
     case sideFront = 0x05
+    /// The DPI button, next to the wheel.
     case topBack = 0x06
+    /// The protocol numbers it, but this mouse has no second top button.
     case topFront = 0x08
+
+    /// The buttons the mouse actually has, and so the ones the app offers.
+    public static let onMouse: [T20Button] = [.left, .wheel, .right, .sideBack, .sideFront, .topBack]
 }
 
 /// What a button does. Everything but `hostKey` the mouse performs itself; a `hostKey` binding makes the mouse
-/// report the press on its vendor input report instead, so it needs a host-side listener that does not exist yet.
+/// report the press on its vendor input report instead, which is how a button gets a Mac shortcut.
 public enum T20ButtonAction: UInt8, CaseIterable, Codable, Sendable {
     case hostKey = 0x00
     case leftClick = 0x01
@@ -148,34 +152,58 @@ public struct T20Settings: Equatable, Codable, Sendable {
     public var buttons: [T20Button: T20ButtonAction]
     public var scroll: T20ScrollMode
     public var fireRate: UInt8
+    /// The shortcuts the Mac presses for a button. A button with one is sent `hostKey`, so the mouse reports the
+    /// press instead of acting on it. Optional so settings saved before shortcuts existed still load.
+    public var shortcuts: [T20Button: WindowCommand]?
 
     public init(
         dpi: T20DPISettings = .factoryDefault,
         lighting: T20Lighting = .factoryDefault,
         buttons: [T20Button: T20ButtonAction] = Self.factoryButtons,
+        shortcuts: [T20Button: WindowCommand]? = nil,
         scroll: T20ScrollMode = .normal,
         fireRate: UInt8 = 4
     ) {
         self.dpi = dpi
         self.lighting = lighting
         self.buttons = buttons
+        self.shortcuts = shortcuts
         self.scroll = scroll
         self.fireRate = fireRate
     }
 
-    /// The bindings the reference notes saw on a new mouse.
+    /// The bindings a new mouse starts with. The single top button cycles the stages, which is the only way to reach
+    /// all four of them from one button.
     public static let factoryButtons: [T20Button: T20ButtonAction] = [
         .left: .leftClick,
         .wheel: .middleClick,
         .right: .rightClick,
         .sideFront: .forward,
         .sideBack: .back,
-        .topFront: .dpiUp,
-        .topBack: .dpiDown,
+        .topBack: .dpiCycle,
     ]
+
+    public func shortcut(for button: T20Button) -> WindowCommand? {
+        shortcuts?[button]
+    }
+
+    /// Gives the button a Mac shortcut, or takes one away and leaves the button to the mouse again.
+    public mutating func setShortcut(_ shortcut: WindowCommand?, for button: T20Button) {
+        guard let shortcut else {
+            shortcuts?.removeValue(forKey: button)
+            return
+        }
+        shortcuts = (shortcuts ?? [:]).merging([button: shortcut]) { _, new in new }
+        buttons[button] = .hostKey
+    }
+
+    /// What the mouse is told to do with `button`: `hostKey` whenever the Mac has a shortcut to press instead.
+    public func action(for button: T20Button) -> T20ButtonAction? {
+        shortcut(for: button) == nil ? buttons[button] : .hostKey
+    }
 
     /// Refuses a binding set that would leave no button clicking, which would strand the mouse.
     public var hasLeftClick: Bool {
-        buttons.values.contains(.leftClick)
+        T20Button.allCases.contains { action(for: $0) == .leftClick }
     }
 }

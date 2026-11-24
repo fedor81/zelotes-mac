@@ -25,12 +25,18 @@ final class T20Model {
     /// Why macOS refused to open the T-20, when it did: it is a mouse, so macOS only lets an app open it with
     /// Input Monitoring.
     private(set) var accessError: String?
+    /// Whether macOS lets the app press keys, which a button set to a Mac shortcut needs.
+    private(set) var isShortcutPermitted = ShortcutSender.isPermitted
+    /// Whether the app is reading the report the T-20 sends for a Mac shortcut button.
+    private(set) var isListeningForButtons = false
 
     @ObservationIgnored private let store: T20Store
     @ObservationIgnored private let connection: MouseConnection
+    @ObservationIgnored private let monitor = T20InputMonitor()
     @ObservationIgnored private let log = Logger(subsystem: "local.zelotes-mac", category: "t20")
     @ObservationIgnored private var lastWork: Task<Void, Never>?
     @ObservationIgnored private var settleWork: Task<Void, Never>?
+    @ObservationIgnored private var askedForShortcutPermission = false
 
     /// A change waits for the clicking to stop before it is sent, so dragging a stepper does not write once a pixel.
     private static let settleDelay = Duration.milliseconds(700)
@@ -57,6 +63,13 @@ final class T20Model {
             accessError = error.localizedDescription
             log.error("T-20: \(error.localizedDescription, privacy: .public)")
         }
+        monitor.onReport = { [weak self] reportID, bytes in self?.buttonReported(reportID, bytes) }
+        do {
+            try monitor.start()
+            isListeningForButtons = true
+        } catch {
+            log.error("T-20 shortcuts: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     var isBusy: Bool {
@@ -68,7 +81,53 @@ final class T20Model {
         edit(&settings)
         persist()
         isOnMouse = false
+        if settings.shortcuts?.isEmpty == false {
+            requestShortcutPermission()
+        }
         scheduleWrite()
+    }
+
+    /// Re-reads the permission macOS grants outside the app, once the user has been to System Settings.
+    func refreshPermissions() {
+        isShortcutPermitted = ShortcutSender.isPermitted
+        if !isListeningForButtons, (try? monitor.start()) != nil {
+            isListeningForButtons = true
+        }
+    }
+
+    /// What stops a Mac shortcut button from working, when something does.
+    var shortcutProblem: String? {
+        guard settings.shortcuts?.isEmpty == false else { return nil }
+        if !isShortcutPermitted {
+            return "macOS does not let ZelotesMac press keys yet."
+        }
+        if !isListeningForButtons {
+            return "The app cannot read the T-20's button reports yet."
+        }
+        return nil
+    }
+
+    /// Presses the shortcut a button stands for; the mouse reports the press instead of acting on it.
+    private func buttonReported(_ reportID: UInt32, _ bytes: [UInt8]) {
+        guard let press = T20InputReport.buttonPress(reportID: reportID, in: bytes), press.isDown,
+              let command = settings.shortcut(for: press.button),
+              let stroke = command.keyStroke(on: .macOS) else { return }
+        guard ShortcutSender.isPermitted else {
+            requestShortcutPermission()
+            return
+        }
+        guard ShortcutSender.post(stroke) else {
+            log.error("No key code for \(stroke.key.name, privacy: .public)")
+            return
+        }
+    }
+
+    /// Asks macOS for Accessibility once, which is what adds the app to that list.
+    private func requestShortcutPermission() {
+        guard !askedForShortcutPermission, !ShortcutSender.isPermitted else { return }
+        askedForShortcutPermission = true
+        ShortcutSender.requestPermission()
+        refreshPermissions()
     }
 
     /// Sends the settings now, as the Update Mouse button does.
