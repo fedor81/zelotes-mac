@@ -22,13 +22,24 @@
 ## Zelotes T-20
 
 - USB `30fa:1701`, product `USB GAMING MOUSE`, maker `INSTANT`. Two HID interfaces, both on usage page 1: usage 6 is a composite of a keyboard (report 3), Consumer (2), a vendor input report (page `FF00`, ID 6) and the vendor feature report (page `FF01`, ID 7); usage 2 is the plain mouse (report 1).
-- No output reports: the longest output report is 1 byte on both interfaces, so the C-18's 64-byte table writes cannot apply here. Nothing has been written to this mouse yet.
-- The mouse report, ID 1, is seven bytes: the ID, the buttons (bit 0 left, 1 right, 2 middle, 3 and 4 the two thumb buttons, which is which not yet certain), X and Y as signed 16-bit little-endian and the wheel. Unlike the C-18's it carries a report ID, which moves X and Y one byte along; `ZelotesProbe measure --report-id` accounts for that.
-- The DPI button sends no button bit and no report of its own; like the C-18's, it changes the mouse without telling the host.
+- No output reports: the longest output report is 1 byte on both interfaces, so the C-18's 64-byte table writes cannot apply here. Configuration is one 8-byte feature report at a time: report ID 7, a command byte, its arguments and zeros, with about 12 ms between packets. Both interfaces take the same reports; `T20Identity` uses usage 2 because usage 6 also carries a keyboard.
+- Opening either interface needs Input Monitoring: `IOHIDManagerOpen` answers `0xe00002e2` (`kIOReturnNotPermitted`) without it, and a manager that failed hands out no channel. Only the vendor-page interface of the C-18 opens without the permission.
+- macOS ties the Input Monitoring grant to the app's code requirement, so an ad-hoc signature without one loses the grant on every rebuild (`tccd` logs "Failed to match existing code requirement"). `scripts/build-app.sh` therefore signs with `-r='designated => identifier "local.zelotes-mac"'`. `tccutil reset ListenEvent local.zelotes-mac` clears a stale grant.
 - Feature report 7 reads back 32 bytes without any write: `07 00 80 08 51 2a 02 1b 11 ss 00 d0 09 00 00 02 20 5a a5 …`. Both interfaces answer it with the same data. On an idle mouse only byte 9 changed, through `00`, `02`, `04`, `06` every five seconds, which is probably an animation. The other bytes are not identified.
 - Feature reports 1 to 3 answer with the report ID repeated and zeros, which is not data; only report 7 carries anything.
 - No vendor input reports arrive when the buttons are pressed, so the mouse streams nothing about its configuration.
 - Read it with `ZelotesProbe devices`, then `ZelotesProbe feature --vendor 0x30fa --product 0x1701 --feature-id 7` and `ZelotesProbe listen --vendor 0x30fa --product 0x1701`; all three only read.
+
+### T-20 commands
+
+Every command is one 8-byte feature report, ID 7 first; the chip answers nothing but a status report. The mouse stores nothing, so `T20Writer` sends the whole set after each plug-in and after each change.
+
+- DPI: `07 09 <active stage> <(dpi/200)<<4 | 0x08+stage> <mask of enabled stages>`; four stages, 200 to 3000 in steps of 200, one packet per stage with the same mask.
+- Buttons: `07 10 <button> <action>`. Buttons 01 left, 02 wheel, 03 right, 04 side rear, 05 side front, 06 top rear, 08 top front. Actions 00 host (reports the press to the Mac; nothing listens yet), 01 left, 02 middle, 03 right, 04 back, 05 forward, 06 cycle stages, 07 show desktop, 08 double click, 09 auto-fire, 0B stage up, 0C stage down.
+- Wheel: `07 11 00 00` scroll, `07 11 01 00` volume, `07 11 02 02` reversed. Auto-fire interval: `07 12 00 <0..255>`.
+- Lighting: `07 13 7F 17` off, `07 13 7F 10|speed` rainbow breathing (speed 0 to 5). A colour needs all six slots `07 14 <slot<<4 | green><red<<4 | blue>` (slots 0, 2, 4, 6, 8, A, nibble `0xF - channel/16`) and then `07 13 FF <value<<4 | speed> 0B <0xF - brightness> <value & 0xF>`, value 0A steady, 08 breathing, 06 spectrum, speed 0 for steady.
+- The mouse has a red and a blue LED only: `00ff00` turns the lighting off, and red and blue are the colours that light.
+- `ZelotesProbe t20-status`, `t20-dpi` and `t20-light` send these with tracing; `ZelotesProbe t20-light --usage 2 --light steady --colour ff0000` was seen to light the mouse red.
 
 ## macOS pointer acceleration
 

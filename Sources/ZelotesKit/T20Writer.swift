@@ -8,6 +8,8 @@ public struct T20Writer {
     public typealias Pause = @MainActor (Duration) async throws -> Void
 
     static let settleAfterCommand = Duration.milliseconds(12)
+    /// How long the interface stays busy with a mode change before it takes commands again.
+    static let settleAfterRefusal = Duration.milliseconds(400)
 
     private let transport: any ReportTransport
     private let pause: Pause
@@ -17,7 +19,36 @@ public struct T20Writer {
         self.pause = pause
     }
 
-    public func write(_ settings: T20Settings) async throws {
+    /// Sends all the settings. The mouse refuses every command for a moment after a mode packet, so that refusal
+    /// is answered by sending the sequence again; every command is a plain write, so repeating one is harmless.
+    public func write(_ settings: T20Settings, attempts: Int = 3) async throws {
+        var attempt = 1
+        while true {
+            do {
+                try await writeEverything(settings)
+                return
+            } catch {
+                guard attempt < attempts, Self.isMomentaryRefusal(error) else { throw error }
+                attempt += 1
+                try await pause(Self.settleAfterRefusal)
+            }
+        }
+    }
+
+    /// Whether the error is the refusal the T-20 gives while it is still busy with the previous mode packet.
+    public static func isMomentaryRefusal(_ error: any Error) -> Bool {
+        guard let error = error as? MouseAccessError else { return false }
+        switch error {
+        case .reportRejected(let status), .accessRefused(let status):
+            return status == momentaryRefusal
+        case .notConnected, .writeNotConfirmed:
+            return false
+        }
+    }
+
+    private static let momentaryRefusal = IOReturn(bitPattern: 0xE000_02E2)
+
+    private func writeEverything(_ settings: T20Settings) async throws {
         try await writeLighting(settings.lighting)
         try await send(.scroll(settings.scroll))
         try await send(.fireRate(settings.fireRate))

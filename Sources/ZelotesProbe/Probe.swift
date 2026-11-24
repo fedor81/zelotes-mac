@@ -116,7 +116,7 @@ struct Probe {
               --feature-id 7        feature report to read in the feature experiment
               --report-id           measure: the movement report starts with its report ID
               --filter text         devices: only the interfaces whose product or maker contains text
-              --usage 6             usage of the configuration interface, when its page has several
+              --usage 2             usage of the configuration interface, when its page has several
               --config-report 7     report ID of the configuration feature report; the C-18 uses 0
               --light MODE          t20-light: off, steady, breathing, rainbow, spectrum; default steady
               --colour rrggbb      t20-light: colour as hex; default ff0000.
@@ -124,7 +124,7 @@ struct Probe {
               --mode-code 0x16     t20-light: send only 07 13 7f <code>, without the colour slots.
               --extended-code 0x0a t20-light: send 07 13 ff <mode<<4|speed> 0b <0f-brightness> 00 after the slots.
               --speed 0..5         t20-light: speed nibble for --extended-code; 6 and above freezes the effect.
-                The T-20 experiments default to its own IDs: 30fa:1701, usage page 1 usage 6, report 7.
+                The T-20 experiments default to its own IDs: 30fa:1701, usage page 1 usage 2, report 7.
             """
 
         init?(arguments: [String]) {
@@ -203,10 +203,10 @@ struct Probe {
             self.experiment = experiment
 
             if experiment.isT20 {
-                if !vendorWasSet { vendorID = 0x30FA }
-                if !productWasSet { productID = 0x1701 }
-                if !usagePageWasSet { usagePage = 0x01 }
-                if !usageWasSet { usage = 0x06 }
+                if !vendorWasSet { vendorID = T20Identity.vendorID }
+                if !productWasSet { productID = T20Identity.productID }
+                if !usagePageWasSet { usagePage = T20Identity.configurationUsagePage }
+                if !usageWasSet { usage = T20Identity.configurationUsage }
                 if !configReportWasSet { configReportID = T20Command.reportID }
             }
         }

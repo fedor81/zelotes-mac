@@ -120,6 +120,8 @@ public struct T20DPISettings: Equatable, Codable, Sendable {
     public static let stageCount = 4
     public static let dpiRange = 200...3000
     public static let dpiStep = 200
+    /// Every value a stage can be set to.
+    public static let dpiChoices = Array(stride(from: dpiRange.lowerBound, through: dpiRange.upperBound, by: dpiStep))
 
     public var stages: [Int]
     public var enabled: [Bool]

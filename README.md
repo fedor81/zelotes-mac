@@ -1,8 +1,8 @@
 <img src="docs/images/icon.png" width="128" alt="ZelotesMac icon">
 
-# ZelotesMac C-18
+# ZelotesMac
 
-An Unofficial Mac app for the Zelotes C-18 vertical mouse. It sets the buttons, DPI, lighting and pointer acceleration.
+An Unofficial Mac app for the Zelotes C-18 vertical mouse, and for the Zelotes T-20, which gets its own tab. It sets the buttons, DPI and lighting, and the C-18's pointer acceleration.
 
 ## Sponsor
 
@@ -43,10 +43,19 @@ Turn off macOS acceleration for this mouse, or use Windows acceleration or your 
 
 Keep as many setups as you like. Drag one onto Profile 1 or Profile 2 to put it on the mouse.
 
+## Zelotes T-20
+
+The T-20 tab has four DPI stages of 200 to 3000 DPI, the seven buttons, the wheel and auto-fire, and its lighting.
+
+- The mouse stores nothing, so the app keeps its settings on the Mac and sends them again each time the mouse is plugged in and after every change.
+- Its lighting has a red and a blue LED only, so those are the two colours offered.
+- macOS asks for Input Monitoring the first time, because the mouse is an input device. Turn ZelotesMac on in System Settings › Privacy & Security › Input Monitoring.
+- A button set to a Mac shortcut is not offered yet: it would need the app to listen for the mouse's own reports, which it does not do.
+
 ## Requirements
 
 - macOS 26 or later, on Apple silicon or Intel
-- A Zelotes C-18 (USB ID 12C9:2003)
+- A Zelotes C-18 (USB ID 12C9:2003) or a Zelotes T-20 (USB ID 30FA:1701)
 
 ## Install
 

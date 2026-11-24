@@ -49,6 +49,9 @@ public final class MouseConnection {
     private let configurationUsagePage: Int
     private let configurationUsage: Int?
     private let featureReportID: CFIndex
+    /// Whether macOS let the manager open. A manager it refused matches devices it cannot open, so their
+    /// channels would only fail on every write.
+    private var isOpen = false
 
     /// The IDs default to the C-18's. The probe passes another mouse's so its configuration interface can be
     /// tried before the app knows about that mouse. `configurationUsage` narrows the match when more than one
@@ -84,12 +87,14 @@ public final class MouseConnection {
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 
         let status = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        guard status == kIOReturnSuccess else {
+        isOpen = status == kIOReturnSuccess
+        guard isOpen else {
             throw MouseAccessError.accessRefused(status)
         }
     }
 
     fileprivate func attach(_ device: IOHIDDevice) {
+        guard isOpen else { return }
         configurationChannel?.close()
         configurationChannel = ConfigurationChannel(device: device, reportID: featureReportID)
         onChange?()

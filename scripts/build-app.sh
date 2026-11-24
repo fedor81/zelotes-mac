@@ -22,6 +22,9 @@ xcrun actool "$root/Support/AppIcon.icon" --compile "$root/$app/Contents/Resourc
     > /dev/null
 # Nested code has to be signed before the bundle that contains it.
 codesign --force --sign - --identifier local.zelotes-mac.pointer "$app/Contents/MacOS/ZelotesPointerAgent"
-codesign --force --sign - "$app"
+# The T-20 needs Input Monitoring, which macOS ties to the code requirement of the app. An ad-hoc signature
+# without one gets a fresh requirement on every build, and the grant made for the last build stops matching,
+# so the requirement is spelled out to keep it the same.
+codesign --force --sign - --identifier local.zelotes-mac -r='designated => identifier "local.zelotes-mac"' "$app"
 
 echo "Built $app"

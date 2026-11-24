@@ -5,8 +5,8 @@ struct ZelotesMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("Zelotes C-18", id: "presets") {
-            ContentView(model: appDelegate.model)
+        Window("ZelotesMac", id: "presets") {
+            MouseTabs(model: appDelegate.model, t20: appDelegate.t20)
         }
         .defaultSize(width: 1105, height: 726)
         .windowResizability(.contentMinSize)
@@ -18,6 +18,31 @@ struct ZelotesMacApp: App {
             SettingsView()
         }
     }
+}
+
+/// One tab per mouse: the C-18 with its presets and profiles, and the T-20, which has one set of settings.
+private struct MouseTabs: View {
+    @Bindable var model: MappingModel
+    @Bindable var t20: T20Model
+    @AppStorage(MouseTab.key) private var selectedTab = MouseTab.c18
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            Tab("Zelotes C-18", systemImage: "computermouse", value: MouseTab.c18) {
+                ContentView(model: model)
+            }
+            Tab("Zelotes T-20", systemImage: "computermouse.fill", value: MouseTab.t20) {
+                T20View(model: t20)
+            }
+        }
+    }
+}
+
+enum MouseTab: String {
+    case c18
+    case t20
+
+    static let key = "selectedMouseTab"
 }
 
 private struct PresetCommands: Commands {
@@ -59,6 +84,7 @@ private struct PresetCommands: Commands {
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = MappingModel()
+    let t20 = T20Model()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         AppearancePreference.stored.apply()
@@ -82,6 +108,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Task {
             await model.waitForMouse()
+            await t20.finishPendingWork()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

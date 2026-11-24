@@ -289,3 +289,62 @@ extension KeyboardKey {
         Self.glyphsByName[name] ?? name
     }
 }
+
+extension T20Button {
+    var title: String {
+        switch self {
+        case .left: "Left Click"
+        case .wheel: "Wheel Click"
+        case .right: "Right Click"
+        case .sideBack: "Side Button (Rear)"
+        case .sideFront: "Side Button (Front)"
+        case .topBack: "Top Button (Rear)"
+        case .topFront: "Top Button (Front)"
+        }
+    }
+}
+
+extension T20ButtonAction {
+    /// The actions the mouse carries out itself. `hostKey` is left out: it makes the mouse report the press to the
+    /// Mac instead, and nothing on the Mac listens for the T-20's vendor report yet, so the button would do nothing.
+    static let assignable = allCases.filter { $0 != .hostKey }
+
+    var title: String {
+        switch self {
+        case .hostKey: "Mac Shortcut"
+        case .leftClick: "Left Click"
+        case .middleClick: "Middle Click"
+        case .rightClick: "Right Click"
+        case .back: "Back"
+        case .forward: "Forward"
+        case .dpiCycle: "Cycle DPI Stages"
+        case .showDesktop: "Show Desktop"
+        case .doubleClick: "Double Click"
+        case .autoFire: "Auto-Fire"
+        case .dpiUp: "DPI Up"
+        case .dpiDown: "DPI Down"
+        }
+    }
+}
+
+extension T20LightingMode {
+    var title: String {
+        switch self {
+        case .off: "Off"
+        case .steady: "Steady"
+        case .breathing: "Breathing"
+        case .spectrum: "Spectrum"
+        case .rainbowBreathing: "Rainbow Breathing"
+        }
+    }
+}
+
+extension T20ScrollMode {
+    var title: String {
+        switch self {
+        case .normal: "Scroll"
+        case .volume: "Volume"
+        case .reversed: "Reverse Scroll"
+        }
+    }
+}
